@@ -19,13 +19,21 @@ void sig2_handler(int signo);
 //          SIGUSR2 --- sleep
 
 
-// function main ------------------------------------------------------ 
+int jobi;
+
+void DONE() { Msg("Job number %d done",jobi);
+              msg("Job number %d done",jobi);}
+
+
+// function main ------------------------------------------
 int main(int argc,char** argv) {
-  int jobi, i;
+  int i;
   unsigned int t;
+
+  atexit(DONE);
   
-  // we inherited signal process mask in which all signals are blocked 
-  // except SIGUSR2 
+  // we inherited signal process mask in which all signals 
+  // are blocked except SIGUSR2 
   
   
   // install singal handler for SIGUSR1 
@@ -63,20 +71,21 @@ int main(int argc,char** argv) {
   } while(t == 0);
   
   for(i = 0; i < t; i++) {
-    Msg("I am job %d and making my %d-th turn out of %d",jobi,i+1,t);
+    Msg("I am job %d and making my %d-th turn out "
+        "of %d",jobi,i+1,t);
     sleep(1);
   }
   
   }// end function main 
   
   
-  // function sig1_handler --------------------------------------------------
+  // function sig1_handler --------------------------------
   void sig1_handler(int signo) {
    return;
   }// end function sig1_handler
   
   
-  // function sig2_handler -------------------------------------------------- 
+  // function sig2_handler --------------------------------
   void sig2_handler(int signo) {
   
    // we go to sleep until SIGUSR1 

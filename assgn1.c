@@ -82,6 +82,9 @@ Queue* hpq;
 Queue* mpq;
 Queue* lpq;
 
+// Index of the current executing job
+int jobi; 
+
 // function main ------------------------------------------------- 
 int main(int argc, char** argv) {
   int i;
@@ -152,11 +155,10 @@ int main(int argc, char** argv) {
 
   // loop for dispatching jobs; ends when all queues are empty
   while(1) {
-    int jobi; // index of the first job from the highest-priority non-empty queue
 
     // the high-priority queue is not empty
     if (hpq->first != -1){
-      jobi = hpq->queue[hpq->first]; 
+      jobi = dequeue(hpq); // Pop from the queue
       kill(job_table[jobi].pid, SIGUSR1); // "switch it on" by sending it SIGUSR1
       job_table[jobi].hpq_no += 1; // it's gone through the high-priority queue one more time
       Msg("Switched on high-priority job %d", jobi); // record it in the log
@@ -164,7 +166,7 @@ int main(int argc, char** argv) {
     }
     // the high-priority queue is empty but the medium-priority queue is not
     else if (mpq->first != -1){
-      jobi = mpq->queue[mpq->first]; 
+      jobi = dequeue(mpq);
       kill(job_table[jobi].pid, SIGUSR1); 
       job_table[jobi].mpq_no += 1; // it's gone through the medium-priority queue one more time
       Msg("Switched on medium-priority job %d", jobi);
@@ -172,7 +174,7 @@ int main(int argc, char** argv) {
     }
     // the high- and medium-priority queues are empty, but the low-priority queue is not
     else if (lpq->first != -1){
-      jobi = lpq->queue[lpq->first]; 
+      jobi = dequeue(lpq);
       kill(job_table[jobi].pid, SIGUSR1); 
       Msg("Switched on low-priority job %d", jobi);
       msg("Switched on low-priority job %d", jobi);
@@ -278,11 +280,9 @@ pid_t create_job(int i) {
   
 // function siga_handler ------------------------------------------ 
 void siga_handler() {
-  int jobi; // save the current job index here
 
   // if the current job is in the high-priority queue
-  if (hpq->first != -1){
-    jobi = dequeue(hpq); // remove it from the high-priority queue
+  if (job_table[jobi].priority == high){
     kill(job_table[jobi].pid, SIGUSR2); // "switch it off" by sending it SIGUSR2
     // if it has already reached hpq_times
     if (job_table[jobi].hpq_no == hpq_times) {
@@ -297,8 +297,7 @@ void siga_handler() {
   }
 
   // if the current job is in the medium-priority queue
-  else if (mpq->first != -1){
-    jobi = dequeue(mpq); // remove it from the medium-priority queue
+  else if (job_table[jobi].priority == medium){
     kill(job_table[jobi].pid, SIGUSR2);
     // if it has already reached mpq_times
     if (job_table[jobi].mpq_no == mpq_times) {
@@ -314,7 +313,6 @@ void siga_handler() {
 
   // if the current job is in the low-priority queue
   else {
-    jobi = dequeue(lpq); // remove it from the low-priority queue
     kill(job_table[jobi].pid, SIGUSR2);
     enqueue(lpq, jobi); // put it back to the low-priority queue
     Msg("Switched off low-priority job %d", jobi);
@@ -324,19 +322,7 @@ void siga_handler() {
   
 // function sigc_handler ------------------------------------------ 
 void sigc_handler() {
-  alarm(0); // disarm the alarm
-  int jobi; // save the job index here
-
-  // if the current job is in the high-priority queue
-  if (hpq->first != -1)
-    jobi = dequeue(hpq); // remove it from the high-priority queue
-  // if the current job is in the medium-priority queue
-  else if (mpq->first != -1)
-    jobi = dequeue(mpq); // remove it from the medium-priority queue
-  // if the current job is in the low-priority queue
-  else
-    jobi = dequeue(lpq); // remove it from the low-priority queue
-  
+  alarm(0); // disarm the alarm  
   job_table[jobi].done = true; // notice it is done
   Msg("Job %d done", jobi);
   msg("Job %d done", jobi);
