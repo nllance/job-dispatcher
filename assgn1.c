@@ -97,7 +97,7 @@ int main(int argc, char** argv) {
   int arg = atoi(argv[1]);
   // check if the single command line argument (argv[1]) has value 3 to 6, if not, terminate
   if ((arg < 3) || (arg > 6)) {
-    printf("Error: Number of jobs must be between 3 and 6\n");
+    printf("Error: Not a number between 3 and 6\n");
     exit(0);
   }
   printf("The argument is: %s\n", argv[1]);
