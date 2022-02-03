@@ -63,6 +63,9 @@ Queue* new_queue(); // initialize a new queue
 void enqueue(Queue* queue, int i); // add job of index i to a queue
 int dequeue(Queue* queue); // pop the first job of a queue
 
+int logindex = 0;
+int * logi = &logindex;
+
 /* Global int which stores how many jobs are present
    The number of jobs is supplied by the user via CLI args
 */
@@ -81,7 +84,7 @@ Queue* lpq;
 
 // function main ------------------------------------------------- 
 int main(int argc, char** argv) {
-  int i, j;
+  int i;
   pid_t pid;
   
   // check the number of command line arguments, if not 2, terminate
@@ -179,6 +182,9 @@ int main(int argc, char** argv) {
     }
     // all three queues are empty
     else {
+      free(hpq);
+      free(mpq);
+      free(lpq);
       Msg("All jobs done");
       msg("All jobs done");
       break; // terminate the loop
@@ -199,7 +205,7 @@ int main(int argc, char** argv) {
 
 // function new_queue --------------------------------------------
 Queue* new_queue(){
-  Queue* q;
+  Queue *q = malloc(sizeof(Queue));
   q->first = -1; // first == -1 represents an empty queue
   return q;
 } // end function new_queue
