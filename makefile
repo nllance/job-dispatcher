@@ -8,3 +8,5 @@ job.o: job.c log.h
 	gcc -c job.c
 job: job.o log.o
 	gcc -o job job.o log.o
+make clean:
+	rm *.o

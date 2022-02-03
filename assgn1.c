@@ -21,10 +21,6 @@
 #define hpq_times   2 // 2 times in the high priority queue (hpq)
 #define mpq_times   4 // 4 times in the medium priority queue (mpq)
 
-// You may or may not use this; depends on your implementation
-int logindex = 0;
-int * logi = &logindex;
-
 /* Data structure to handle jobs. It will have 5 members:
   - process pid
   - is it done or not?
@@ -53,7 +49,7 @@ typedef struct Queue {
 } Queue;
 
 // DECLARE PROTOTYPES: functions, structs, sigset, etc.
-pid_t create_job(int i); // Return type is `pid_t` and parameter is an int
+pid_t create_job(int i); // return type is `pid_t` and parameter is an int
 void siga_handler();   // handler for signal SIGALRM
 void sigc_handler();   // handler for signal SIGCHLD
 sigset_t mymask1;      // normal signal process mask when all signals are free but SIGALRM and SIGCHLD are blocked
@@ -65,7 +61,7 @@ struct sigaction sa_chld;   // disposition for SIGCHLD
 // Auxiliary functions for dealing with queues
 Queue* new_queue(); // initialize a new queue
 void enqueue(Queue* queue, int i); // add job of index i to a queue
-int dequeue(Queue* queue); // pop the first element of a queue
+int dequeue(Queue* queue); // pop the first job of a queue
 
 /* Global int which stores how many jobs are present
    The number of jobs is supplied by the user via CLI args
@@ -78,21 +74,33 @@ int number_of_jobs;
 */
 Job job_table[6];
 
+// Queues declarition
+Queue* hpq;
+Queue* mpq;
+Queue* lpq;
+
 // function main ------------------------------------------------- 
 int main(int argc, char** argv) {
   int i, j;
   pid_t pid;
   
   // check the number of command line arguments, if not 2, terminate
+  if (argc != 2) {
+    printf("Error: Wrong number of arguments\n");
+    exit(0);
+  }
+
+  // convert argv[1] (string) to an int
+  int arg = atoi(argv[1]);
   // check if the single command line argument (argv[1]) has value 3 to 6, if not, terminate
-  if ((argc != 2) || (strchr("3456", argv[1]) == NULL)) {
-    printf("Error: Incorrect input\n");
+  if ((arg < 3) || (arg > 6)) {
+    printf("Error: Number of jobs must be between 3 and 6\n");
     exit(0);
   }
   printf("The argument is: %s\n", argv[1]);
 
-  // convert argv[1] (string) to an int and set appropriately number_of_jobs
-  number_of_jobs = atoi(argv[1]);
+  // set appropriately number_of_jobs
+  number_of_jobs = arg;
   
   create_log("assgn1.log");
   
@@ -104,7 +112,7 @@ int main(int argc, char** argv) {
 
   // install mymask1 as the process signal mask using sigprocmask() 
   if (sigprocmask(SIG_SETMASK, &mymask1, NULL) == -1) 
-    perror("Failed to install mymask1 as the process mask");
+    perror("Failed to install mymask1 as the process signal mask");
 
   // prepare mymask2 -- all signals free 
   if (sigemptyset(&mymask2) == -1)
@@ -129,9 +137,10 @@ int main(int argc, char** argv) {
       (sigaction(SIGCHLD, &sa_chld, NULL) == -1)) // install SIGCHLD disposition using sigaction() 
     perror("Failed to install SIGCHLD disposition");
 
-  Queue* hpq = new_queue(); // create empty high-priority queue
-  Queue* mpq = new_queue(); // create empty medium-priority queue
-  Queue* lpq = new_queue(); // create empty low-priority queue
+  // create empty queues
+  hpq = new_queue();
+  mpq = new_queue();
+  lpq = new_queue();
   
   // create and save information about jobs
   for(i = 0; i < number_of_jobs; i++) {
@@ -146,24 +155,27 @@ int main(int argc, char** argv) {
 
   // loop for dispatching jobs; ends when all queues are empty
   while(1) {
+    int jobi; // index of the first job from the highest-priority non-empty queue
+
     // the high-priority queue is not empty
     if (hpq->first != -1){
-      // "switch on" the first job from the highest-priority non-empty queue by sending it SIGUSR1
-      kill(job_table[hpq->first].pid, SIGUSR1);
-      Msg("Switched on high-priority job %d", hpq->first); // record it in the log
-      msg("Switched on high-priority job %d", hpq->first); // display it on the screen
+      jobi = hpq->first; 
+      job_table[jobi].hpq_no++; // it's gone through the high-priority queue one more time
+      Msg("Switched on high-priority job %d", jobi); // record it in the log
+      msg("Switched on high-priority job %d", jobi); // display it on the screen
     }
     // the high-priority queue is empty but the medium-priority queue is not
     else if (mpq->first != -1){
-      kill(job_table[mpq->first].pid, SIGUSR1);
-      Msg("Switched on medium-priority job %d", mpq->first);
-      msg("Switched on medium-priority job %d", mpq->first);
+      jobi = mpq->first;
+      job_table[jobi].mpq_no++; // it's gone through the medium-priority queue one more time
+      Msg("Switched on medium-priority job %d", jobi);
+      msg("Switched on medium-priority job %d", jobi);
     }
     // the high- and medium-priority queues are empty, but the low-priority queue is not
     else if (lpq->first != -1){
-      kill(job_table[lpq->first].pid, SIGUSR1);
-      Msg("Switched on low-priority job %d", lpq->first);
-      msg("Switched on low-priority job %d", lpq->first);
+      jobi = lpq->first;
+      Msg("Switched on low-priority job %d", jobi);
+      msg("Switched on low-priority job %d", jobi);
     }
     // all three queues are empty
     else {
@@ -171,13 +183,13 @@ int main(int argc, char** argv) {
       msg("All jobs done");
       break; // terminate the loop
     }
+
+    kill(job_table[jobi].pid, SIGUSR1); // "switch it on" by sending it SIGUSR1
     alarm(1); // set alarm for 1 second
-    /* switch the current signal process mask mymask1 to mymask2 while
-       going to suspension using sigsuspend()
-       (thus only SIGCHLD or SIGALRM will wake it up from suspension
-       SIGCHLD indicates that the job that is currently executing just
-       terminated, SIGALRM indicates that the time for the job currently
-       executing is up and it must be "switched off")
+    /* switch the current signal process mask mymask1 to mymask2 while going to suspension using sigsuspend()
+       thus only SIGCHLD or SIGALRM will wake it up from suspension
+       SIGCHLD indicates that the job that is currently executing just terminated
+       SIGALRM indicates that the time for the job currently executing is up and it must be "switched off"
     */
     sigsuspend(&mymask2);
   }
@@ -210,13 +222,13 @@ void enqueue(Queue* queue, int i) {
 
 // function dequeue -------------------------------------------- 
 int dequeue(Queue* queue) {
-  int index; // save the first element here
+  int index; // save the first job here
   // if first < 0, the queue is empty, nothing to dequeue
   if (queue->first < 0) {
     printf("Error: Cannot dequeue from empty queue\n");
     exit(0);
   }
-  // if first == last, there's only 1 element in the queue
+  // if first == last, there's only 1 job in the queue
   else if (queue->first == queue->last) {
     index = queue->first;
     queue->first = -1;
@@ -262,28 +274,65 @@ pid_t create_job(int i) {
   
 // function siga_handler ------------------------------------------ 
 void siga_handler() {
-  // TO DO
-  // "switch off" the currently executing job by sending it SIGUSR2 signal
-  // (using kill())
-  // either put the job back to the queue it came from (you must count
-  // how many times it has been through the queue) or "demote it" to the
-  // lower-prority queue.
-  // record this in the log using 
-  //     Msg("Switched off high-priority job %d",job number); or
-  //     Msg("Switched off medium-priority job %d",job number); or
-  //     Msg("Switched off low-priority job %d",job number);
-  // announce it on the screen suing corresponding msg();
-  // END TO DO 
-  return;
-} // end function siga_handler
-  
+  int jobi; // save the current job index here
+
+  // if the current job is in the high-priority queue
+  if (hpq->first != -1){
+    jobi = dequeue(hpq); // remove it from the high-priority queue
+    // if it has already reached hpq_times
+    if (job_table[jobi].hpq_no == hpq_times) {
+      enqueue(mpq, jobi); // demote it to the medium-priority queue
+      job_table[jobi].priority = medium; // set priority to medium
+    }
+    // if it hasn't reached hpq_times yet
+    else
+      enqueue(hpq, jobi); // put it back to the high-priority queue
+    Msg("Switched off high-priority job %d", jobi);
+    msg("Switched off high-priority job %d", jobi);
+  }
+
+  // if the current job is in the medium-priority queue
+  else if (mpq->first != -1){
+    jobi = dequeue(mpq); // remove it from the medium-priority queue
+    // if it has already reached mpq_times
+    if (job_table[jobi].mpq_no == mpq_times) {
+      enqueue(lpq, jobi); // demote it to the low-priority queue
+      job_table[jobi].priority = low; // set priority to low
+    }
+    // if it hasn't reached mpq_times yet
+    else
+      enqueue(mpq, jobi); // put it back to the medium-priority queue
+    Msg("Switched off medium-priority job %d", jobi);
+    msg("Switched off medium-priority job %d", jobi);
+  }
+
+  // if the current job is in the low-priority queue
+  else {
+    jobi = dequeue(lpq); // remove it from the low-priority queue
+    enqueue(lpq, jobi); // put it back to the low-priority queue
+    Msg("Switched off low-priority job %d", jobi);
+    msg("Switched off low-priority job %d", jobi);
+  }
+
+  kill(job_table[jobi].pid, SIGUSR2); // "switch it off" by sending it SIGUSR2
+} // end function siga_handler  
   
 // function sigc_handler ------------------------------------------ 
 void sigc_handler() {
-  // TO DO
-  // disarm the alarm
-  // record in the log that the currently executing job is done by
-  // Msg("job %d done",job number);
-  // END TO DO 
-    printf("%d\n",hpq_times);
+  alarm(0); // disarm the alarm
+  int jobi; // save the job index here
+
+  // if the current job is in the high-priority queue
+  if (hpq->first != -1)
+    jobi = dequeue(hpq); // remove it from the high-priority queue
+  // if the current job is in the medium-priority queue
+  else if (hpq->first != -1)
+    jobi = dequeue(mpq); // remove it from the medium-priority queue
+  // if the current job is in the low-priority queue
+  else
+    jobi = dequeue(lpq); // remove it from the low-priority queue
+  
+  job_table[jobi].done = true; // notice it is done
+  Msg("Job %d done", jobi);
+  msg("Job %d done", jobi);
 } // end function sigc_handler
