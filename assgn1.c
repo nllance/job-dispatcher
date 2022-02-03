@@ -77,7 +77,7 @@ int number_of_jobs;
 */
 Job job_table[6];
 
-// Queues declarition
+// Queues declaration
 Queue* hpq;
 Queue* mpq;
 Queue* lpq;
@@ -204,7 +204,7 @@ int main(int argc, char** argv) {
 Queue* new_queue(){
   // Must assign a value to a pointer, otherwise it points to an unpredictable location
   // See also: https://stackoverflow.com/questions/12958931/warning-x-may-be-used-uninitialized-in-this-function
-  Queue *q = malloc(sizeof(Queue)); // allocate meomory for a new queue
+  Queue *q = malloc(sizeof(Queue)); // allocate memory for a new queue
   q->first = -1; // first == -1 represents an empty queue
   return q;
 } // end function new_queue
