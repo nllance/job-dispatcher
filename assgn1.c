@@ -39,7 +39,7 @@ typedef struct Job {
 /* Data structure to handle queues. It will have 3 members:
   - keep track of first element
   - keep track of last element
-  - a queue of length 6
+  - an array of length 6, consisting of job indexes (For example, queue[first] = the index of next job)
   Queues are FIFO (First In, First Out)
 */
 typedef struct Queue {
@@ -108,37 +108,31 @@ int main(int argc, char** argv) {
   create_log("assgn1.log");
   
   // prepare mymask1 -- SIGCHLD and SIGALRM blocked, all other signals free
-  if ((sigemptyset(&mymask1) == -1) ||
-      (sigaddset(&mymask1, SIGALRM) == -1) ||
-      (sigaddset(&mymask1, SIGCHLD) == -1))
-    perror("Failed to set up mymask1");
+  sigemptyset(&mymask1);
+  sigaddset(&mymask1, SIGALRM);
+  sigaddset(&mymask1, SIGCHLD);
 
   // install mymask1 as the process signal mask using sigprocmask() 
-  if (sigprocmask(SIG_SETMASK, &mymask1, NULL) == -1) 
-    perror("Failed to install mymask1 as the process signal mask");
+  sigprocmask(SIG_SETMASK, &mymask1, NULL);
 
   // prepare mymask2 -- all signals free 
-  if (sigemptyset(&mymask2) == -1)
-    perror("Failed to set up mymask2");
+  sigemptyset(&mymask2);
 
   // prepare jobmask -- all signals blocked except SIGUSR2 
-  if ((sigfillset(&jobmask) == -1) ||
-      (sigdelset(&jobmask, SIGUSR2) == -1))
-    perror("Failed to set up jobmask");
+  sigfillset(&jobmask);
+  sigdelset(&jobmask, SIGUSR2);
 
   // prepare SIGALRM disposition sa_alarm
   sa_alarm.sa_handler = siga_handler; // its handler (sa_handler) is siga_handler()
+  sigfillset(&sa_alarm.sa_mask); // its signal mask (sa_mask) must block all signals
   sa_alarm.sa_flags = SA_RESTART; // its flags (sa_flags) must be set to SA_RESTART 
-  if ((sigfillset(&sa_alarm.sa_mask) == -1) || // its signal mask (sa_mask) must block all signals
-      (sigaction(SIGALRM, &sa_alarm, NULL) == -1)) // install SIGALRM disposition using sigaction() 
-    perror("Failed to install SIGALRM disposition");
+  sigaction(SIGALRM, &sa_alarm, NULL); // install SIGALRM disposition using sigaction() 
   
   // prepare SIGCHLD disposition sa_chld
   sa_chld.sa_handler = sigc_handler; // its handler (sa_handler) is sigc_handler()
+  sigfillset(&sa_chld.sa_mask); // its signal mask (sa_mask) must block all signals
   sa_chld.sa_flags = SA_RESTART; // its flags (sa_flags) must be set to SA_RESTART 
-  if ((sigfillset(&sa_chld.sa_mask) == -1) || // its signal mask (sa_mask) must block all signals
-      (sigaction(SIGCHLD, &sa_chld, NULL) == -1)) // install SIGCHLD disposition using sigaction() 
-    perror("Failed to install SIGCHLD disposition");
+  sigaction(SIGCHLD, &sa_chld, NULL); // install SIGCHLD disposition using sigaction() 
 
   // create empty queues
   hpq = new_queue();
@@ -162,26 +156,30 @@ int main(int argc, char** argv) {
 
     // the high-priority queue is not empty
     if (hpq->first != -1){
-      jobi = hpq->first; 
-      job_table[jobi].hpq_no++; // it's gone through the high-priority queue one more time
+      jobi = hpq->queue[hpq->first]; 
+      kill(job_table[jobi].pid, SIGUSR1); // "switch it on" by sending it SIGUSR1
+      job_table[jobi].hpq_no += 1; // it's gone through the high-priority queue one more time
       Msg("Switched on high-priority job %d", jobi); // record it in the log
       msg("Switched on high-priority job %d", jobi); // display it on the screen
     }
     // the high-priority queue is empty but the medium-priority queue is not
     else if (mpq->first != -1){
-      jobi = mpq->first;
-      job_table[jobi].mpq_no++; // it's gone through the medium-priority queue one more time
+      jobi = mpq->queue[mpq->first]; 
+      kill(job_table[jobi].pid, SIGUSR1); 
+      job_table[jobi].mpq_no += 1; // it's gone through the medium-priority queue one more time
       Msg("Switched on medium-priority job %d", jobi);
       msg("Switched on medium-priority job %d", jobi);
     }
     // the high- and medium-priority queues are empty, but the low-priority queue is not
     else if (lpq->first != -1){
-      jobi = lpq->first;
+      jobi = lpq->queue[lpq->first]; 
+      kill(job_table[jobi].pid, SIGUSR1); 
       Msg("Switched on low-priority job %d", jobi);
       msg("Switched on low-priority job %d", jobi);
     }
     // all three queues are empty
     else {
+      // free the memory space for queues
       free(hpq);
       free(mpq);
       free(lpq);
@@ -190,7 +188,6 @@ int main(int argc, char** argv) {
       break; // terminate the loop
     }
 
-    kill(job_table[jobi].pid, SIGUSR1); // "switch it on" by sending it SIGUSR1
     alarm(1); // set alarm for 1 second
     /* switch the current signal process mask mymask1 to mymask2 while going to suspension using sigsuspend()
        thus only SIGCHLD or SIGALRM will wake it up from suspension
@@ -205,7 +202,9 @@ int main(int argc, char** argv) {
 
 // function new_queue --------------------------------------------
 Queue* new_queue(){
-  Queue *q = malloc(sizeof(Queue));
+  // Must assign a value to a pointer, otherwise it points to an unpredictable location
+  // See also: https://stackoverflow.com/questions/12958931/warning-x-may-be-used-uninitialized-in-this-function
+  Queue *q = malloc(sizeof(Queue)); // allocate meomory for a new queue
   q->first = -1; // first == -1 represents an empty queue
   return q;
 } // end function new_queue
@@ -222,7 +221,7 @@ void enqueue(Queue* queue, int i) {
     queue->last = 0;
   // else, first >= 0 and last < 5
   else
-    queue->last++;
+    queue->last += 1;
   queue->queue[queue->last] = i; // set queue[last] = i
 } // end function enqueue
 
@@ -236,18 +235,18 @@ int dequeue(Queue* queue) {
   }
   // if first == last, there's only 1 job in the queue
   else if (queue->first == queue->last) {
-    index = queue->first;
+    index = queue->queue[queue->first];
     queue->first = -1;
   }
   // if first == 5, reset first = 0
   else if (queue->first == 5) {
-    index = queue->first;
+    index = queue->queue[queue->first];
     queue->first = 0;
   }
-  // else, 0 <= first < 5, first++
+  // else, 0 <= first < 5
   else {
-    index = queue->first;
-    queue->first++;
+    index = queue->queue[queue->first];
+    queue->first += 1;
   }
   return index;
 } // end function dequeue
@@ -259,8 +258,7 @@ pid_t create_job(int i) {
   char argv1[10];
 
   // switch process signal mask from mymask1 to jobmask 
-  if (sigprocmask(SIG_SETMASK, &jobmask, NULL) == -1) 
-    perror("Failed to switch process signal mask from mymask1 to jobmask");
+  sigprocmask(SIG_SETMASK, &jobmask, NULL);
   
   if ((pid = fork()) < 0) Sys_exit("fork error\n");
 
@@ -285,6 +283,7 @@ void siga_handler() {
   // if the current job is in the high-priority queue
   if (hpq->first != -1){
     jobi = dequeue(hpq); // remove it from the high-priority queue
+    kill(job_table[jobi].pid, SIGUSR2); // "switch it off" by sending it SIGUSR2
     // if it has already reached hpq_times
     if (job_table[jobi].hpq_no == hpq_times) {
       enqueue(mpq, jobi); // demote it to the medium-priority queue
@@ -300,6 +299,7 @@ void siga_handler() {
   // if the current job is in the medium-priority queue
   else if (mpq->first != -1){
     jobi = dequeue(mpq); // remove it from the medium-priority queue
+    kill(job_table[jobi].pid, SIGUSR2);
     // if it has already reached mpq_times
     if (job_table[jobi].mpq_no == mpq_times) {
       enqueue(lpq, jobi); // demote it to the low-priority queue
@@ -315,13 +315,12 @@ void siga_handler() {
   // if the current job is in the low-priority queue
   else {
     jobi = dequeue(lpq); // remove it from the low-priority queue
+    kill(job_table[jobi].pid, SIGUSR2);
     enqueue(lpq, jobi); // put it back to the low-priority queue
     Msg("Switched off low-priority job %d", jobi);
     msg("Switched off low-priority job %d", jobi);
   }
-
-  kill(job_table[jobi].pid, SIGUSR2); // "switch it off" by sending it SIGUSR2
-} // end function siga_handler  
+} // end function siga_handler
   
 // function sigc_handler ------------------------------------------ 
 void sigc_handler() {
@@ -332,7 +331,7 @@ void sigc_handler() {
   if (hpq->first != -1)
     jobi = dequeue(hpq); // remove it from the high-priority queue
   // if the current job is in the medium-priority queue
-  else if (hpq->first != -1)
+  else if (mpq->first != -1)
     jobi = dequeue(mpq); // remove it from the medium-priority queue
   // if the current job is in the low-priority queue
   else
