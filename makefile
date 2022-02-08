@@ -9,4 +9,4 @@ job.o: job.c log.h
 job: job.o log.o
 	gcc -o job job.o log.o
 make clean:
-	rm *.o job
+	rm *.o
